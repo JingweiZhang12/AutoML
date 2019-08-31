@@ -17,6 +17,7 @@ from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 from auto_deeplab import AutoDeeplab
 from architect import Architect
+torch.backends.cudnn.benchmark = True
 
 class Trainer(object):
     def __init__(self, args):
@@ -136,8 +137,7 @@ class Trainer(object):
             loss.backward()
             self.optimizer.step()
 
-            # Architect alpha,beta training
-            if epoch > self.args.alpha_epoch:
+            if epoch >= self.args.alpha_epoch:
                 search = next(iter(self.train_loaderB))
                 image_search, target_search = search['image'], search['label']
                 if self.args.cuda:
@@ -227,8 +227,6 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
-    parser.add_argument('--out-stride', type=int, default=16,
-                        help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='cityscapes',
                         choices=['pascal', 'coco', 'cityscapes', 'kd'],
                         help='dataset name (default: pascal)')
