@@ -30,46 +30,40 @@ class Trainer(object):
         self.writer = self.summary.create_summary()
 
         kwargs = {'num_workers': args.workers, 'pin_memory': True, 'drop_last':True}
+        # A for weights training and B for alpha, beta training
         self.train_loaderA, self.train_loaderB, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
 
         if args.use_balanced_weights:
-            classes_weights_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset+'_classes_weights.npy')
-            if os.path.isfile(classes_weights_path):
-                weight = np.load(classes_weights_path)
+            classes_weightsA_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset+'_classes_weightsA.npy')
+            classes_weightsB_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset + '_classes_weightsB.npy')
+            if os.path.isfile(classes_weightsA_path) and os.path.isfile(classes_weightsB_path):
+                weightA = np.load(classes_weightsA_path)
+                weightB = np.load(classes_weightsB_path)
             else:
-                #if so, which trainloader to use?
-                weight = calculate_weigths_labels(args.dataset, self.train_loader, self.nclass)
-            weight = torch.from_numpy(weight.astype(np.float32))
+                # weightA for weight training and weightB for alpha, beta training
+                weightA = calculate_weigths_labels(args.dataset, self.train_loaderA, self.nclass)
+                weightB = calculate_weigths_labels(args.dataset, self.train_loaderB, self.nclass)
+            weightA = torch.from_numpy(weightA.astype(np.float32))
+            weightB = torch.from_numpy(weightB.astype(np.float32))
         else:
-            weight = None
-        self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
+            weightA = None
+            weightB = None # unused
 
-        # Define network
+        # training loss for weights and alpha, beta,  weightB is unused
+        self.criterion = SegmentationLosses(weight=weightA, cuda=args.cuda).build_loss(mode=args.loss_type)
         model = AutoDeeplab (num_classes=self.nclass, num_layers=12, criterion=self.criterion, filter_multiplier=self.args.filter_multiplier,
                              block_multiplier=self.args.block_multiplier, step=self.args.step)
+
+        # Define optimizer and lr scheduler for weights
         optimizer = torch.optim.SGD(
                 model.weight_parameters(),
                 args.lr,
                 momentum=args.momentum,
                 weight_decay=args.weight_decay
             )
-
-        self.model, self.optimizer = model, optimizer
-        # Define Evaluator
-        self.evaluator = Evaluator(self.nclass)
-        # Define lr scheduler
         self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr,
                                       args.epochs, len(self.train_loaderA), min_lr=args.min_lr)
-        # TODO: Figure out if len(self.train_loader) should be devided by two ? in other module as well
-
-
-        # Using cuda
-        if args.cuda:
-            if (torch.cuda.device_count() > 1 or args.load_parallel):
-                self.model = torch.nn.DataParallel(self.model.cuda())
-                patch_replication_callback(self.model)
-            self.model = self.model.cuda()
-            print ('cuda finished')
+        self.model, self.optimizer = model, optimizer
 
         #checkpoint = torch.load(args.resume)
         #print('about to load state_dict')
@@ -77,7 +71,20 @@ class Trainer(object):
         #print('model loaded')
         #sys.exit()
 
+        # architect parameters and Adam ptimizer
         self.architect = Architect (self.model, args)
+
+        # Define Evaluator
+        self.evaluator = Evaluator(self.nclass)
+
+        # Using cuda
+        if args.cuda:
+            if (torch.cuda.device_count() > 1 or args.load_parallel):
+                self.model = torch.nn.DataParallel(self.model.cuda())
+                patch_replication_callback(self.model)
+            self.model = self.model.cuda()
+            print('cuda finished')
+
         # Resuming checkpoint
         self.best_pred = 0.0
         if args.resume is not None:
@@ -95,16 +102,15 @@ class Trainer(object):
                     name = k[7:]  # remove 'module.' of dataparallel
                     new_state_dict[name] = v
                 self.model.load_state_dict(new_state_dict)
-
             else:
                 if (torch.cuda.device_count() > 1 or args.load_parallel):
                     self.model.module.load_state_dict(checkpoint['state_dict'])
                 else:
                     self.model.load_state_dict(checkpoint['state_dict'])
-
-
+            # Finetuning
             if not args.ft:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
+
             self.best_pred = checkpoint['best_pred']
             print("=> loaded checkpoint '{}' (epoch {})"
                   .format(args.resume, checkpoint['epoch']))
@@ -119,6 +125,7 @@ class Trainer(object):
         tbar = tqdm(self.train_loaderA)
         num_img_tr = len(self.train_loaderA)
         for i, sample in enumerate(tbar):
+            # network weights training
             image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -129,6 +136,7 @@ class Trainer(object):
             loss.backward()
             self.optimizer.step()
 
+            # Architect alpha,beta training
             if epoch > self.args.alpha_epoch:
                 search = next(iter(self.train_loaderB))
                 image_search, target_search = search['image'], search['label']
@@ -140,11 +148,10 @@ class Trainer(object):
             tbar.set_description('Train loss: %.3f' % (train_loss / (i + 1)))
             #self.writer.add_scalar('train/total_loss_iter', loss.item(), i + num_img_tr * epoch)
 
-            # Show 10 * 3 inference results each epoch
+            # Show 10 inference results in a epoch
             if i % (num_img_tr // 10) == 0:
                 global_step = i + num_img_tr * epoch
                 self.summary.visualize_image(self.writer, self.args.dataset, image, target, output, global_step)
-
             #torch.cuda.empty_cache()
         self.writer.add_scalar('train/total_loss_epoch', train_loss, epoch)
         print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
@@ -307,17 +314,20 @@ def main():
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
-    if args.cuda:
-        try:
-            args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
-        except ValueError:
-            raise ValueError('Argument --gpu_ids must be a comma-separated list of integers only')
+    # if args.cuda:
+    #     try:
+    #         args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
+    #         print(args.gpu_ids)
+    #     except ValueError:
+    #         raise ValueError('Argument --gpu_ids must be a comma-separated list of integers only')
 
     if args.sync_bn is None:
-        if args.cuda and len(args.gpu_ids) > 1:
+        if args.cuda and torch.cuda.device_count() > 1:
             args.sync_bn = True
+            # print("sysc_bn is True",torch.cuda.device_count(),args.cuda)
         else:
             args.sync_bn = False
+            # print("sysc_bn is False",torch.cuda.device_count(),args.cuda)
 
     # default settings for epochs, batch_size and lr
     if args.epochs is None:
@@ -330,14 +340,11 @@ def main():
         args.epochs = epoches[args.dataset.lower()]
 
     if args.batch_size is None:
-        args.batch_size = 4 * len(args.gpu_ids)
-
+        args.batch_size = 4 * torch.cuda.device_count()
     if args.test_batch_size is None:
         args.test_batch_size = args.batch_size
-
-    #args.lr = args.lr / (4 * len(args.gpu_ids)) * args.batch_size
-
-
+    if args.lr is None:
+        args.lr = args.lr / (4 * torch.cuda.device_count()) * args.batch_size
     if args.checkname is None:
         args.checkname = 'deeplab-'+str(args.backbone)
     print(args)

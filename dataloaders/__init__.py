@@ -28,7 +28,7 @@ def make_data_loader(args, **kwargs):
             num_class = train_set.NUM_CLASSES
             train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
         else:
-            raise Exception('autodeeplab param not set properly')
+            raise NotImplementedError('autodeeplab param not set properly')
 
         val_set = cityscapes.CityscapesSegmentation(args, split='val')
         test_set = cityscapes.CityscapesSegmentation(args, split='test')

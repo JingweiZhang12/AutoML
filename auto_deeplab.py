@@ -28,32 +28,41 @@ class AutoDeeplab (nn.Module) :
             nn.BatchNorm2d(half_f_initial* self._block_multiplier),
             nn.ReLU ()
         )
+        # self.stem1 = nn.Sequential(
+        #     nn.Conv2d(half_f_initial* self._block_multiplier, half_f_initial* self._block_multiplier, 3, stride=1, padding=1),
+        #     nn.BatchNorm2d(half_f_initial* self._block_multiplier),
+        #     nn.ReLU ()
+        # )
+        # self.stem2 = nn.Sequential(
+        #     nn.Conv2d(half_f_initial* self._block_multiplier, f_initial* self._block_multiplier, 3, stride=2, padding=1),
+        #     nn.BatchNorm2d(f_initial* self._block_multiplier),
+        #     nn.ReLU ()
+        # )
         self.stem1 = nn.Sequential(
-            nn.Conv2d(half_f_initial* self._block_multiplier, half_f_initial* self._block_multiplier, 3, stride=1, padding=1),
-            nn.BatchNorm2d(half_f_initial* self._block_multiplier),
-            nn.ReLU ()
+            nn.Conv2d(half_f_initial * self._block_multiplier, f_initial * self._block_multiplier, 3, stride=2,padding=1),
+            nn.BatchNorm2d(half_f_initial * self._block_multiplier),
+            nn.ReLU()
         )
+        # stem2 is level_4
         self.stem2 = nn.Sequential(
-            nn.Conv2d(half_f_initial* self._block_multiplier, f_initial* self._block_multiplier, 3, stride=2, padding=1),
+            nn.Conv2d(half_f_initial* self._block_multiplier, self._filter_multiplier * self._block_multiplier, 3, stride=2, padding=1),
             nn.BatchNorm2d(f_initial* self._block_multiplier),
             nn.ReLU ()
         )
-
-
-        # intitial_fm = C_initial
+        #__init__(self, steps, block_multiplier, prev_prev_fmultiplier,
+        #         prev_fmultiplier_down, prev_fmultiplier_same, prev_fmultiplier_up,filter_multiplier):
         for i in range (self._num_layers) :
-
             if i == 0 :
                 cell1 = cell (self._step, self._block_multiplier, -1,
-                              None, f_initial, None,
+                              None, self._filter_multiplier, None,
                               self._filter_multiplier)
                 cell2 = cell (self._step, self._block_multiplier, -1,
-                              f_initial, None, None,
+                              self._filter_multiplier, None, None,
                               self._filter_multiplier * 2)
                 self.cells += [cell1]
                 self.cells += [cell2]
             elif i == 1 :
-                cell1 = cell (self._step, self._block_multiplier, f_initial,
+                cell1 = cell (self._step, self._block_multiplier, self._filter_multiplier,
                               None, self._filter_multiplier, self._filter_multiplier * 2,
                               self._filter_multiplier)
 
@@ -179,8 +188,8 @@ class AutoDeeplab (nn.Module) :
             normalized_betas8 = F.softmax (self.betas8, dim = -1)
             normalized_betas16 = F.softmax(self.betas16, dim=-1)
             normalized_top_betas = F.softmax(self.top_betas, dim=-1)
+        # def forward(self, s0, s1_down, s1_same, s1_up, n_alphas)
         for layer in range (self._num_layers - 1) :
-
             if layer == 0 :
                 level4_new, = self.cells[count] (None, None, self.level_4[-1], None, normalized_alphas)
                 count += 1
@@ -339,7 +348,7 @@ class AutoDeeplab (nn.Module) :
                 self.level_8.append (level8_new)
                 self.level_16.append (level16_new)
                 self.level_32.append (level32_new)
-
+            # remain two layers in each downsample for saving memory
             self.level_4 = self.level_4[-2:]
             self.level_8 = self.level_8[-2:]
             self.level_16 = self.level_16[-2:]
@@ -364,11 +373,17 @@ class AutoDeeplab (nn.Module) :
     def _initialize_alphas_betas(self):
         k = sum(1 for i in range(self._step) for n in range(2+i))
         num_ops = len(PRIMITIVES)
-        alphas = torch.tensor (1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
-        bottom_betas = torch.tensor (1e-3 * torch.randn(self._num_layers - 1, 2).cuda(), requires_grad=True)
-        betas8 = torch.tensor (1e-3 * torch.randn(self._num_layers - 2, 3).cuda(), requires_grad=True)
-        betas16 = torch.tensor(1e-3 * torch.randn(self._num_layers - 3, 3).cuda(), requires_grad=True)
-        top_betas = torch.tensor (1e-3 * torch.randn(self._num_layers - 1, 2).cuda(), requires_grad=True)
+        # alphas = torch.tensor (1e-3*torch.randn(k, num_ops).cuda(), requires_grad=True)
+        # bottom_betas = torch.tensor (1e-3 * torch.randn(self._num_layers - 1, 2).cuda(), requires_grad=True)
+        # betas8 = torch.tensor (1e-3 * torch.randn(self._num_layers - 2, 3).cuda(), requires_grad=True)
+        # betas16 = torch.tensor(1e-3 * torch.randn(self._num_layers - 3, 3).cuda(), requires_grad=True)
+        # top_betas = torch.tensor (1e-3 * torch.randn(self._num_layers - 1, 2).cuda(), requires_grad=True)
+
+        alphas = (1e-3 * torch.randn(k, num_ops)).requires_grad_().cuda()
+        bottom_betas = (1e-3 * torch.randn(self._num_layers - 1, 2)).requires_grad_().cuda()
+        betas8 = (1e-3 * torch.randn(self._num_layers - 2, 3)).requires_grad_().cuda()
+        betas16 = (1e-3 * torch.randn(self._num_layers - 3, 3)).requires_grad_().cuda()
+        top_betas = (1e-3 * torch.randn(self._num_layers - 1, 2)).requires_grad_().cuda()
 
         self._arch_parameters = [
             alphas,
