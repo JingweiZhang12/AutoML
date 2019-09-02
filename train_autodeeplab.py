@@ -227,6 +227,8 @@ def main():
     parser.add_argument('--backbone', type=str, default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
+    parser.add_argument('--out-stride', type=int, default=16,
+                        help='network output stride (default: 16)')
     parser.add_argument('--dataset', type=str, default='cityscapes',
                         choices=['pascal', 'coco', 'cityscapes', 'kd'],
                         help='dataset name (default: pascal)')
@@ -329,7 +331,7 @@ def main():
     if args.epochs is None:
         epoches = {
             'coco': 30,
-            'cityscapes': 200,
+            'cityscapes': 50,
             'pascal': 50,
             'kd':10
         }

@@ -24,7 +24,7 @@ class AutoDeeplab (nn.Module) :
         half_f_initial = int(f_initial / 2)
 
         self.stem0 = nn.Sequential(
-            nn.Conv2d(3, half_f_initial * self._block_multiplier, 3, stride=2, padding=1),
+            nn.Conv2d(3, half_f_initial * self._block_multiplier, 3, stride=1, padding=1),
             nn.BatchNorm2d(half_f_initial* self._block_multiplier),
             nn.ReLU ()
         )
@@ -40,13 +40,13 @@ class AutoDeeplab (nn.Module) :
         # )
         self.stem1 = nn.Sequential(
             nn.Conv2d(half_f_initial * self._block_multiplier, f_initial * self._block_multiplier, 3, stride=2,padding=1),
-            nn.BatchNorm2d(half_f_initial * self._block_multiplier),
+            nn.BatchNorm2d(f_initial * self._block_multiplier),
             nn.ReLU()
         )
         # stem2 is level_4
         self.stem2 = nn.Sequential(
-            nn.Conv2d(half_f_initial* self._block_multiplier, self._filter_multiplier * self._block_multiplier, 3, stride=2, padding=1),
-            nn.BatchNorm2d(f_initial* self._block_multiplier),
+            nn.Conv2d(f_initial* self._block_multiplier, self._filter_multiplier * self._block_multiplier, 3, stride=2, padding=1),
+            nn.BatchNorm2d(self._filter_multiplier* self._block_multiplier),
             nn.ReLU ()
         )
 
