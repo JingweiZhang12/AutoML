@@ -322,10 +322,8 @@ def main():
     if args.sync_bn is None:
         if args.cuda and torch.cuda.device_count() > 1:
             args.sync_bn = True
-            # print("sysc_bn is True",torch.cuda.device_count(),args.cuda)
         else:
             args.sync_bn = False
-            # print("sysc_bn is False",torch.cuda.device_count(),args.cuda)
 
     # default settings for epochs, batch_size and lr
     if args.epochs is None:

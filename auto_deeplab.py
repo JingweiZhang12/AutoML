@@ -49,8 +49,7 @@ class AutoDeeplab (nn.Module) :
             nn.BatchNorm2d(f_initial* self._block_multiplier),
             nn.ReLU ()
         )
-        #__init__(self, steps, block_multiplier, prev_prev_fmultiplier,
-        #         prev_fmultiplier_down, prev_fmultiplier_same, prev_fmultiplier_up,filter_multiplier):
+
         for i in range (self._num_layers) :
             if i == 0 :
                 cell1 = cell (self._step, self._block_multiplier, -1,
